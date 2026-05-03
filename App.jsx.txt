@@ -1,0 +1,1936 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║           GOOGLE OAUTH SETUP — READ BEFORE RUNNING              ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║                                                                  ║
+// ║  STEP 1 — Create a Google Cloud Project                         ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  1. Go to https://console.cloud.google.com                      ║
+// ║  2. Click the project dropdown (top-left) → "New Project"       ║
+// ║  3. Name it "StudyAI" → click Create                            ║
+// ║                                                                  ║
+// ║  STEP 2 — Enable the Google Identity API                        ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  1. In your project, go to:                                     ║
+// ║     APIs & Services → Library                                   ║
+// ║  2. Search "Google Identity" → Enable it                        ║
+// ║                                                                  ║
+// ║  STEP 3 — Configure OAuth Consent Screen                        ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  1. Go to: APIs & Services → OAuth consent screen               ║
+// ║  2. Choose "External" → Create                                  ║
+// ║  3. Fill in:                                                    ║
+// ║       App name:        StudyAI                                  ║
+// ║       User support email: your Gmail                            ║
+// ║       Developer contact:  your Gmail                            ║
+// ║  4. Click Save & Continue through all steps                     ║
+// ║  5. On "Test users" step → Add your Gmail address               ║
+// ║     (required while app is in Testing mode)                     ║
+// ║                                                                  ║
+// ║  STEP 4 — Create OAuth 2.0 Credentials                         ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  1. Go to: APIs & Services → Credentials                        ║
+// ║  2. Click "+ Create Credentials" → OAuth client ID              ║
+// ║  3. Application type: Web application                           ║
+// ║  4. Name: StudyAI Web Client                                    ║
+// ║  5. Under "Authorized JavaScript origins" add:                  ║
+// ║       http://localhost:3000                                      ║
+// ║       http://localhost:5173   (if using Vite)                   ║
+// ║  6. Leave "Authorized redirect URIs" empty (not needed for GIS) ║
+// ║  7. Click Create → Copy your Client ID                          ║
+// ║                                                                  ║
+// ║  STEP 5 — Paste Your Client ID Below                            ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  Find the line:                                                  ║
+// ║    const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE";       ║
+// ║  Replace it with:                                                ║
+// ║    const GOOGLE_CLIENT_ID = "1234567890-abc...apps.googleusercontent.com"; ║
+// ║                                                                  ║
+// ║  STEP 6 — Run Your App Locally                                  ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  npm install && npm start   (Create React App)                  ║
+// ║  — or —                                                         ║
+// ║  npm install && npm run dev (Vite)                              ║
+// ║                                                                  ║
+// ║  Then open http://localhost:3000 and click "Continue with       ║
+// ║  Google" — it will show all Google accounts signed into         ║
+// ║  your browser/device via the official Google chooser.           ║
+// ║                                                                  ║
+// ║  ⚠️  WHY IT WON'T WORK IN THE CLAUDE PREVIEW                   ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  Claude's artifact sandbox runs inside an iframe with strict    ║
+// ║  security policies. Google's OAuth popup is blocked by these    ║
+// ║  iframe restrictions — this is expected. The code is correct;   ║
+// ║  it only works when served from localhost or your own domain.   ║
+// ║                                                                  ║
+// ║  HOW ACCOUNTS ARE SHOWN                                         ║
+// ║  ─────────────────────────────────────────────────────────────  ║
+// ║  Google Identity Services (GIS) reads accounts already signed   ║
+// ║  into your browser/device. On Android Chrome it can surface     ║
+// ║  device-level Google accounts. The chooser is rendered and      ║
+// ║  controlled entirely by Google — no fake or hardcoded accounts. ║
+// ║                                                                  ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+// ============================================================
+// DESIGN TOKENS & GLOBAL STYLES
+// ============================================================
+const GlobalStyles = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #07070f;
+      --bg2: #0d0d1a;
+      --bg3: #12121f;
+      --surface: rgba(255,255,255,0.04);
+      --surface2: rgba(255,255,255,0.07);
+      --border: rgba(255,255,255,0.08);
+      --purple: #6C5CE7;
+      --purple-light: #8B7CF7;
+      --purple-glow: rgba(108,92,231,0.35);
+      --cyan: #00E5FF;
+      --cyan-glow: rgba(0,229,255,0.25);
+      --pink: #FF6B9D;
+      --pink-glow: rgba(255,107,157,0.25);
+      --green: #00E096;
+      --green-glow: rgba(0,224,150,0.25);
+      --yellow: #FFD93D;
+      --text: #F0EEF8;
+      --text-muted: rgba(240,238,248,0.5);
+      --text-faint: rgba(240,238,248,0.25);
+      --radius: 20px;
+      --radius-sm: 12px;
+      --radius-xs: 8px;
+      --font-display: 'Syne', sans-serif;
+      --font-body: 'DM Sans', sans-serif;
+      --transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+      --shadow-purple: 0 0 30px var(--purple-glow), 0 0 60px rgba(108,92,231,0.1);
+      --shadow-cyan: 0 0 30px var(--cyan-glow), 0 0 60px rgba(0,229,255,0.08);
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-body); overflow: hidden; }
+    #root { height: 100%; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--purple); border-radius: 99px; }
+
+    .glow-text { 
+      background: linear-gradient(135deg, var(--purple-light), var(--cyan));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px var(--purple-glow); }
+      50% { box-shadow: 0 0 40px var(--purple-glow), 0 0 80px rgba(108,92,231,0.15); }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-8px); }
+    }
+    @keyframes spin-slow { to { transform: rotate(360deg); } }
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slide-in-left {
+      from { opacity: 0; transform: translateX(-100%); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes slide-in-right {
+      from { opacity: 0; transform: translateX(30px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fade-in {
+      from { opacity: 0; } to { opacity: 1; }
+    }
+    @keyframes shimmer {
+      from { background-position: -200% center; }
+      to { background-position: 200% center; }
+    }
+    @keyframes ping {
+      0% { transform: scale(1); opacity: 1; }
+      75%, 100% { transform: scale(2); opacity: 0; }
+    }
+    @keyframes bar-fill {
+      from { width: 0; } to { width: var(--target-width); }
+    }
+    @keyframes bounce-in {
+      0% { transform: scale(0.3); opacity: 0; }
+      50% { transform: scale(1.05); }
+      70% { transform: scale(0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes typing-dot {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+    @keyframes logo-reveal {
+      0% { opacity: 0; letter-spacing: 0.5em; }
+      60% { opacity: 1; letter-spacing: 0.05em; }
+      100% { opacity: 1; letter-spacing: 0.02em; }
+    }
+    @keyframes confetti-fall {
+      0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+    }
+    @keyframes celebration-scale {
+      0% { transform: scale(0.5); opacity: 0; }
+      60% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes fab-menu-item {
+      from { opacity: 0; transform: translateY(10px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes modal-scale-in {
+      from { opacity: 0; transform: scale(0.92) translateY(24px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .slide-up { animation: slide-up 0.4s cubic-bezier(0.4,0,0.2,1) both; }
+    .fade-in { animation: fade-in 0.3s ease both; }
+    .bounce-in { animation: bounce-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 24px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+      font-family: var(--font-body); font-weight: 600; font-size: 14px;
+      transition: var(--transition); position: relative; overflow: hidden; white-space: nowrap;
+    }
+    .btn::after {
+      content: ''; position: absolute; inset: 0;
+      background: rgba(255,255,255,0); transition: var(--transition);
+    }
+    .btn:hover::after { background: rgba(255,255,255,0.08); }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--purple), #5a4bd1);
+      color: white; box-shadow: 0 4px 24px var(--purple-glow);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 36px var(--purple-glow), 0 0 60px rgba(108,92,231,0.2); transform: translateY(-1px); }
+
+    .btn-ghost {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--surface2); border-color: var(--purple); }
+
+    .btn-cyan {
+      background: linear-gradient(135deg, #0089cc, #00b8e0);
+      color: white; box-shadow: 0 4px 24px var(--cyan-glow);
+    }
+    .btn-cyan:hover { box-shadow: 0 6px 36px var(--cyan-glow); transform: translateY(-1px); }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      backdrop-filter: blur(20px);
+      transition: var(--transition);
+    }
+    .card:hover { border-color: rgba(108,92,231,0.3); background: var(--surface2); }
+
+    .glass {
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .input-field {
+      width: 100%; padding: 12px 16px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text); font-family: var(--font-body); font-size: 14px;
+      transition: var(--transition); outline: none;
+    }
+    .input-field::placeholder { color: var(--text-faint); }
+    .input-field:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(108,92,231,0.15); background: rgba(255,255,255,0.07); }
+
+    .select-field {
+      width: 100%; padding: 12px 16px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text); font-family: var(--font-body); font-size: 14px;
+      transition: var(--transition); outline: none; appearance: none;
+      cursor: pointer;
+    }
+    .select-field:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(108,92,231,0.15); }
+    .select-field option { background: #1a1a2e; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(7,7,15,0.85);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: flex-end; justify-content: center;
+      animation: fade-in 0.2s ease;
+    }
+    .modal-sheet {
+      width: 100%; max-width: 480px; max-height: 92vh;
+      background: #0f0f1e;
+      border: 1px solid rgba(108,92,231,0.25);
+      border-bottom: none;
+      border-radius: 28px 28px 0 0;
+      overflow: hidden;
+      animation: modal-scale-in 0.35s cubic-bezier(0.34,1.3,0.64,1);
+      box-shadow: 0 -8px 60px rgba(108,92,231,0.15);
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.03em; text-transform: uppercase;
+    }
+    .chip-purple { background: rgba(108,92,231,0.2); color: var(--purple-light); border: 1px solid rgba(108,92,231,0.3); }
+    .chip-cyan { background: rgba(0,229,255,0.1); color: var(--cyan); border: 1px solid rgba(0,229,255,0.2); }
+    .chip-pink { background: rgba(255,107,157,0.1); color: var(--pink); border: 1px solid rgba(255,107,157,0.2); }
+    .chip-green { background: rgba(0,224,150,0.1); color: var(--green); border: 1px solid rgba(0,224,150,0.2); }
+    .chip-yellow { background: rgba(255,217,61,0.1); color: var(--yellow); border: 1px solid rgba(255,217,61,0.2); }
+
+    .tab-bar {
+      display: flex; gap: 2px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 4px;
+    }
+    .tab-btn {
+      flex: 1; padding: 8px 12px; border-radius: 9px; border: none;
+      cursor: pointer; font-family: var(--font-body); font-size: 13px; font-weight: 500;
+      transition: var(--transition); color: var(--text-muted); background: transparent;
+    }
+    .tab-btn.active {
+      background: var(--purple); color: white;
+      box-shadow: 0 2px 16px var(--purple-glow);
+    }
+
+    .progress-bar-track {
+      width: 100%; height: 8px; background: rgba(255,255,255,0.08);
+      border-radius: 99px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%; border-radius: 99px;
+      transition: width 1s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    .fab {
+      position: fixed; bottom: 24px; right: 24px;
+      width: 60px; height: 60px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--purple), #5a4bd1);
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; color: white;
+      box-shadow: 0 4px 32px var(--purple-glow), 0 0 60px rgba(108,92,231,0.2);
+      transition: var(--transition); z-index: 50;
+      animation: pulse-glow 3s ease-in-out infinite;
+    }
+    .fab:hover { transform: scale(1.1); box-shadow: 0 8px 48px var(--purple-glow); }
+    .fab.open { transform: rotate(45deg); }
+    .fab.open:hover { transform: rotate(45deg) scale(1.1); }
+    .fab:active { transform: scale(0.95); }
+
+    .fab-menu {
+      position: fixed; bottom: 96px; right: 16px; z-index: 49;
+      display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+    }
+    .fab-menu-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 18px 10px 14px;
+      background: #1a1228; border: 1px solid rgba(108,92,231,0.35);
+      border-radius: 99px; cursor: pointer; transition: var(--transition);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 16px rgba(108,92,231,0.1);
+      color: var(--text); font-family: var(--font-body); font-size: 14px; font-weight: 600;
+    }
+    .fab-menu-item:hover { background: rgba(108,92,231,0.2); border-color: var(--purple); box-shadow: 0 4px 24px var(--purple-glow); transform: translateX(-4px); }
+
+    .sidebar-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(7,7,15,0.7);
+      backdrop-filter: blur(4px);
+      animation: fade-in 0.2s ease;
+    }
+    .sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0; width: 280px; z-index: 201;
+      background: #0a0a18;
+      border-right: 1px solid var(--border);
+      animation: slide-in-left 0.3s cubic-bezier(0.34,1.2,0.64,1);
+      display: flex; flex-direction: column;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      position: relative; overflow: hidden;
+      transition: var(--transition);
+    }
+    .stat-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: var(--card-glow, transparent);
+      opacity: 0; transition: var(--transition);
+    }
+    .stat-card:hover::before { opacity: 1; }
+    .stat-card:hover { transform: translateY(-2px); }
+
+    .chat-bubble {
+      max-width: 80%; padding: 12px 16px;
+      border-radius: 18px; font-size: 14px; line-height: 1.5;
+      animation: slide-up 0.3s cubic-bezier(0.4,0,0.2,1);
+    }
+    .chat-bubble-user {
+      background: linear-gradient(135deg, var(--purple), #5a4bd1);
+      color: white; border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 20px var(--purple-glow);
+      margin-left: auto;
+    }
+    .chat-bubble-ai {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      color: var(--text); border-bottom-left-radius: 4px;
+    }
+
+    .assignment-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: var(--transition);
+      animation: slide-up 0.3s both;
+    }
+    .assignment-item:hover { border-color: rgba(108,92,231,0.3); background: var(--surface2); transform: translateX(4px); }
+
+    .nav-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 20px; border-radius: var(--radius-sm);
+      cursor: pointer; transition: var(--transition);
+      color: var(--text-muted); font-size: 15px; font-weight: 500;
+      border: 1px solid transparent;
+    }
+    .nav-item:hover { background: var(--surface); color: var(--text); }
+    .nav-item.active {
+      background: rgba(108,92,231,0.15);
+      color: var(--purple-light);
+      border-color: rgba(108,92,231,0.2);
+    }
+    .nav-item.active .nav-icon { filter: drop-shadow(0 0 6px var(--purple)); }
+
+    .schedule-item {
+      display: flex; align-items: stretch; gap: 14px;
+      padding: 14px 0;
+    }
+    .schedule-time-col {
+      display: flex; flex-direction: column; align-items: flex-end;
+      min-width: 60px; font-size: 12px; color: var(--text-faint); padding-top: 2px;
+    }
+    .schedule-line {
+      width: 2px; background: linear-gradient(to bottom, var(--purple), transparent);
+      border-radius: 99px; flex-shrink: 0; position: relative;
+    }
+    .schedule-line::before {
+      content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--purple); box-shadow: 0 0 12px var(--purple-glow);
+    }
+
+    .glow-input-wrapper { position: relative; }
+    .glow-input-wrapper::after {
+      content: ''; position: absolute; inset: -1px;
+      border-radius: var(--radius-sm); pointer-events: none;
+      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      opacity: 0; transition: opacity 0.2s; z-index: -1;
+    }
+    .glow-input-wrapper:focus-within::after { opacity: 0.4; }
+
+    .page-enter { animation: slide-in-right 0.35s cubic-bezier(0.4,0,0.2,1) both; }
+
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px; padding: 48px 24px; text-align: center;
+    }
+    .empty-icon { font-size: 56px; animation: float 3s ease-in-out infinite; }
+
+    .dot-online {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      box-shadow: 0 0 8px var(--green-glow); position: relative;
+    }
+    .dot-online::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%;
+      background: var(--green); animation: ping 1.5s ease-out infinite;
+    }
+
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: var(--radius-xs);
+    }
+
+    .glowing-border-purple {
+      border: 1px solid rgba(108,92,231,0.5);
+      box-shadow: 0 0 20px rgba(108,92,231,0.15), inset 0 0 20px rgba(108,92,231,0.05);
+    }
+
+    @keyframes streak-glow {
+      0%, 100% { text-shadow: 0 0 8px rgba(255,150,0,0.6), 0 0 20px rgba(255,80,0,0.3); }
+      50% { text-shadow: 0 0 16px rgba(255,180,0,0.9), 0 0 40px rgba(255,100,0,0.5); }
+    }
+    @keyframes streak-update {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.18); }
+      70% { transform: scale(0.95); }
+      100% { transform: scale(1); }
+    }
+
+    .streak-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 99px;
+      background: linear-gradient(135deg, rgba(255,150,0,0.2), rgba(255,80,0,0.2));
+      border: 1px solid rgba(255,120,0,0.3);
+      color: #FFB347; font-size: 13px; font-weight: 700;
+      animation: streak-glow 2.5s ease-in-out infinite;
+      transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .streak-badge.updating { animation: streak-update 0.5s cubic-bezier(0.34,1.56,0.64,1); }
+
+    /* Celebration overlay */
+    .celebration-overlay {
+      position: fixed; inset: 0; z-index: 2000;
+      background: rgba(7,7,15,0.93);
+      backdrop-filter: blur(16px);
+      display: flex; align-items: center; justify-content: center;
+      animation: fade-in 0.3s ease;
+    }
+    .celebration-card {
+      background: linear-gradient(160deg, #16102e, #0d0d1e, #0d1a1a);
+      border: 1px solid rgba(108,92,231,0.5);
+      border-radius: 32px; padding: 48px 36px; text-align: center;
+      max-width: 360px; width: 92%;
+      box-shadow: 0 0 80px rgba(108,92,231,0.35), 0 0 160px rgba(0,229,255,0.12), inset 0 1px 0 rgba(255,255,255,0.08);
+      animation: celebration-scale 0.55s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes trophy-glow {
+      0%, 100% { filter: drop-shadow(0 0 12px rgba(255,210,0,0.6)) drop-shadow(0 0 30px rgba(255,150,0,0.3)); }
+      50% { filter: drop-shadow(0 0 24px rgba(255,230,0,0.9)) drop-shadow(0 0 60px rgba(255,180,0,0.5)); }
+    }
+    .trophy-icon { animation: float 2s ease-in-out infinite, trophy-glow 2s ease-in-out infinite; }
+    .confetti-piece {
+      position: fixed; width: 10px; height: 10px; border-radius: 2px;
+      animation: confetti-fall linear both;
+      pointer-events: none; z-index: 2001;
+    }
+
+    /* Google OAuth modal */
+    .google-modal-overlay {
+      position: fixed; inset: 0; z-index: 3000;
+      background: rgba(7,7,15,0.8); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      animation: fade-in 0.2s ease;
+    }
+    .google-modal {
+      background: white; border-radius: 16px; padding: 40px 32px;
+      width: 380px; max-width: 95vw; text-align: center;
+      animation: bounce-in 0.35s cubic-bezier(0.34,1.56,0.64,1);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    }
+  `}</style>
+);
+
+// ============================================================
+// ICONS
+// ============================================================
+const Icon = ({ name, size = 20, color = "currentColor" }) => {
+  const icons = {
+    dashboard: <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill={color}/>,
+    assignment: <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" fill={color}/>,
+    attendance: <path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z" fill={color}/>,
+    planner: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill={color}/>,
+    profile: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={color}/>,
+    close: <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={color}/>,
+    menu: <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" fill={color}/>,
+    check: <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill={color}/>,
+    add: <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill={color}/>,
+    delete: <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill={color}/>,
+    edit: <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill={color}/>,
+    send: <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill={color}/>,
+    chart: <path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z" fill={color}/>,
+    clock: <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" fill={color}/>,
+    lightning: <path d="M7 2v11h3v9l7-12h-4l4-8z" fill={color}/>,
+    book: <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z" fill={color}/>,
+    notification: <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" fill={color}/>,
+    trophy: <path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z" fill={color}/>,
+    star: <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" fill={color}/>,
+    fire: <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67z" fill={color}/>,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      {icons[name] || <circle cx="12" cy="12" r="10" fill={color}/>}
+    </svg>
+  );
+};
+
+// ============================================================
+// DATA STORE — starts completely EMPTY
+// ============================================================
+const useStore = () => {
+  const [user, setUser] = useState(null); // null until logged in
+  const [assignments, setAssignments] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [studyTasks, setStudyTasks] = useState([]);
+  const [streak, setStreak] = useState(0);
+  const [streakUpdating, setStreakUpdating] = useState(false);
+
+  const login = (userData) => setUser({ ...userData, streak: userData.streak ?? 0 });
+
+  // Increment streak with animation flag
+  const incrementStreak = useCallback(() => {
+    setStreak(s => s + 1);
+    setStreakUpdating(true);
+    setTimeout(() => setStreakUpdating(false), 600);
+    // Sync back to user object
+    setUser(u => u ? { ...u, streak: (u.streak ?? 0) + 1 } : u);
+  }, []);
+
+  const resetStreak = useCallback(() => {
+    setStreak(0);
+    setUser(u => u ? { ...u, streak: 0 } : u);
+  }, []);
+
+  const addAssignment = (a) => setAssignments(prev => [...prev, { ...a, id: Date.now(), status: "pending" }]);
+  const deleteAssignment = (id) => setAssignments(prev => prev.filter(a => a.id !== id));
+  const updateAssignment = (id, updates) => setAssignments(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+  const toggleAssignment = (id) => setAssignments(prev => prev.map(a => a.id === id
+    ? { ...a, status: a.status === "completed" ? "pending" : "completed" } : a));
+
+  const addAttendance = (s) => setAttendance(prev => [...prev, { ...s, id: Date.now() }]);
+  const updateAttendance = (id, field, val) => setAttendance(prev => prev.map(s => s.id === id ? { ...s, [field]: Number(val) } : s));
+  const deleteAttendance = (id) => setAttendance(prev => prev.filter(s => s.id !== id));
+
+  const addStudyTask = (t) => setStudyTasks(prev => [...prev, { ...t, id: Date.now(), completed: false }]);
+  const deleteStudyTask = (id) => setStudyTasks(prev => prev.filter(t => t.id !== id));
+  const toggleStudyTask = (id) => setStudyTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  const updateStudyTask = (id, updates) => setStudyTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+
+  const avgAttendance = attendance.length
+    ? Math.round(attendance.reduce((a, s) => a + (s.attended / s.total * 100), 0) / attendance.length)
+    : 0;
+
+  const stats = {
+    attendance: avgAttendance,
+    pending: assignments.filter(a => a.status === "pending").length,
+    studyHours: studyTasks.filter(t => t.completed).length,
+    total: assignments.length,
+  };
+
+  return {
+    user, login,
+    assignments, addAssignment, deleteAssignment, updateAssignment, toggleAssignment,
+    attendance, addAttendance, updateAttendance, deleteAttendance,
+    studyTasks, addStudyTask, deleteStudyTask, toggleStudyTask, updateStudyTask,
+    stats,
+    streak, streakUpdating, incrementStreak, resetStreak,
+  };
+};
+
+// ============================================================
+// CONFETTI
+// ============================================================
+const Confetti = () => {
+  const colors = ["#6C5CE7", "#00E5FF", "#FF6B9D", "#00E096", "#FFD93D", "#8B7CF7"];
+  const pieces = Array.from({ length: 60 }, (_, i) => ({
+    id: i,
+    color: colors[i % colors.length],
+    left: Math.random() * 100,
+    delay: Math.random() * 1.5,
+    duration: 2 + Math.random() * 2,
+    size: 6 + Math.random() * 8,
+  }));
+  return (
+    <>
+      {pieces.map(p => (
+        <div key={p.id} className="confetti-piece" style={{
+          left: `${p.left}%`, top: "-20px",
+          width: p.size, height: p.size,
+          background: p.color,
+          animationDuration: `${p.duration}s`,
+          animationDelay: `${p.delay}s`,
+        }}/>
+      ))}
+    </>
+  );
+};
+
+// ============================================================
+// CELEBRATION OVERLAY — upgraded with streak display
+// ============================================================
+const CelebrationOverlay = ({ onClose, streak }) => (
+  <div className="celebration-overlay">
+    <Confetti/>
+    <div className="celebration-card">
+      {/* Glowing trophy */}
+      <div className="trophy-icon" style={{ fontSize: 80, marginBottom: 20, display: "inline-block" }}>🏆</div>
+
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800, marginBottom: 12, lineHeight: 1.25 }} className="glow-text">
+        Hey! You successfully completed all your tasks 🎉
+      </h2>
+
+      <p style={{ color: "var(--text-muted)", fontSize: 15, marginBottom: 20, lineHeight: 1.6 }}>
+        Keep going, you're doing great!
+      </p>
+
+      {/* Streak display */}
+      <div style={{
+        display: "inline-flex", alignItems: "center", gap: 8,
+        padding: "10px 20px", borderRadius: 99,
+        background: "linear-gradient(135deg, rgba(255,150,0,0.2), rgba(255,80,0,0.15))",
+        border: "1px solid rgba(255,140,0,0.4)",
+        marginBottom: 28, fontSize: 16, fontWeight: 700, color: "#FFB347",
+        boxShadow: "0 0 24px rgba(255,120,0,0.25)",
+        animation: "streak-glow 2s ease-in-out infinite",
+      }}>
+        🔥 Daily Streak: {streak} {streak === 1 ? "day" : "days"}
+      </div>
+
+      <button className="btn btn-primary" onClick={onClose} style={{ width: "100%", height: 52, fontSize: 15 }}>
+        Continue ✨
+      </button>
+    </div>
+  </div>
+);
+
+// ============================================================
+// REAL GOOGLE OAUTH — uses Google Identity Services (GIS)
+// Loads the official Google GSI script and calls the real
+// account chooser. No hardcoded emails. No fake accounts.
+// ============================================================
+const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID_HERE";
+// ↑ Replace with your actual Client ID from:
+//   https://console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client ID
+//   Authorized JavaScript Origins: http://localhost:3000 (or your domain)
+
+const useGoogleAuth = (onSuccess) => {
+  const initialized = useRef(false);
+
+  const loadAndInit = useCallback(() => {
+    const init = () => {
+      if (initialized.current) return;
+      initialized.current = true;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          // response.credential is the ID token (JWT)
+          // In production: send to your backend to verify with Google's tokeninfo endpoint
+          // For demo: decode the JWT payload to get user info
+          try {
+            const payload = JSON.parse(atob(response.credential.split(".")[1]));
+            onSuccess({
+              name: payload.name,
+              email: payload.email,
+              avatar: (payload.name || payload.email).slice(0, 2).toUpperCase(),
+              googleLinked: true,
+              picture: payload.picture,
+            });
+          } catch {
+            console.error("Failed to decode Google credential");
+          }
+        },
+        use_fedcm_for_prompt: true,
+      });
+    };
+
+    if (window.google?.accounts?.id) {
+      init();
+    } else {
+      // Load the GIS script if not already present
+      if (!document.getElementById("google-gsi-script")) {
+        const script = document.createElement("script");
+        script.id = "google-gsi-script";
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.defer = true;
+        script.onload = init;
+        document.head.appendChild(script);
+      }
+    }
+  }, [onSuccess]);
+
+  const signIn = useCallback(() => {
+    loadAndInit();
+    // Small delay to ensure GIS is initialized
+    setTimeout(() => {
+      if (window.google?.accounts?.id) {
+        // prompt() opens the real Google One Tap / account chooser
+        window.google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            // One Tap was blocked (e.g. browser setting). Fall back to popup button flow.
+            // Render a real Google Sign-In button in a modal overlay instead.
+            window.__gsiPopupFallback && window.__gsiPopupFallback();
+          }
+        });
+      }
+    }, 300);
+  }, [loadAndInit]);
+
+  return { signIn };
+};
+
+// Fallback modal: renders the official Google Sign-In button
+const GoogleSignInFallbackModal = ({ onClose, onSuccess }) => {
+  const btnRef = useRef(null);
+
+  useEffect(() => {
+    const render = () => {
+      if (btnRef.current && window.google?.accounts?.id) {
+        window.google.accounts.id.renderButton(btnRef.current, {
+          theme: "outline",
+          size: "large",
+          width: 300,
+          text: "signin_with",
+          shape: "rectangular",
+          logo_alignment: "left",
+        });
+      }
+    };
+    if (window.google?.accounts?.id) render();
+    else {
+      const interval = setInterval(() => {
+        if (window.google?.accounts?.id) { render(); clearInterval(interval); }
+      }, 200);
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  return (
+    <div className="google-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="google-modal">
+        <div style={{ marginBottom: 20 }}>
+          <svg width="24" height="24" viewBox="0 0 48 48" style={{ verticalAlign: "middle", marginRight: 8 }}>
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          <span style={{ fontFamily: "Product Sans, Arial, sans-serif", fontSize: 18, fontWeight: 700, color: "#202124" }}>Sign in with Google</span>
+        </div>
+        <p style={{ fontSize: 14, color: "#5F6368", marginBottom: 24, fontFamily: "Arial, sans-serif" }}>
+          Select an account to continue to StudyAI
+        </p>
+        {/* Official rendered Google button — shows real accounts */}
+        <div ref={btnRef} style={{ display: "flex", justifyContent: "center", minHeight: 44 }}/>
+        <button onClick={onClose} style={{ marginTop: 16, width: "100%", padding: "10px", borderRadius: 8, border: "1px solid #dadce0", background: "white", cursor: "pointer", fontFamily: "Arial", fontSize: 14, color: "#5F6368" }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// SPLASH SCREEN
+// ============================================================
+const SplashScreen = ({ onDone }) => {
+  useEffect(() => { const t = setTimeout(onDone, 2600); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "var(--bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, zIndex: 9999 }}>
+      <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(108,92,231,0.2) 0%, transparent 70%)", top: "20%", left: "50%", transform: "translateX(-50%)", animation: "pulse-glow 2s ease-in-out infinite" }}/>
+      <div style={{ position: "absolute", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,229,255,0.15) 0%, transparent 70%)", bottom: "25%", right: "10%" }}/>
+      <div style={{ position: "relative", animation: "float 3s ease-in-out infinite" }}>
+        <div style={{ width: 90, height: 90, borderRadius: 28, background: "linear-gradient(135deg, var(--purple), #5a4bd1)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 60px var(--purple-glow), 0 0 120px rgba(108,92,231,0.2)", fontSize: 40 }}>🎓</div>
+        <div style={{ position: "absolute", inset: -8, borderRadius: 36, border: "2px solid rgba(108,92,231,0.3)", animation: "spin-slow 8s linear infinite" }}/>
+        <div style={{ position: "absolute", inset: -16, borderRadius: 44, border: "1px solid rgba(0,229,255,0.15)", animation: "spin-slow 12s linear infinite reverse" }}/>
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 800, animation: "logo-reveal 1s 0.3s ease both", background: "linear-gradient(135deg, var(--purple-light), var(--cyan))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>StudyAI</h1>
+        <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 8, animation: "fade-in 0.5s 1s ease both" }}>Your intelligent study companion</p>
+      </div>
+      <div style={{ width: 200, height: 3, background: "rgba(255,255,255,0.08)", borderRadius: 99, overflow: "hidden", marginTop: 24, animation: "fade-in 0.5s 0.5s both" }}>
+        <div style={{ height: "100%", background: "linear-gradient(90deg, var(--purple), var(--cyan))", borderRadius: 99, animation: "bar-fill 2s 0.6s cubic-bezier(0.4,0,0.2,1) both", "--target-width": "100%" }}/>
+      </div>
+      <p style={{ color: "var(--text-faint)", fontSize: 12, animation: "fade-in 0.5s 1.5s both" }}>Initializing your workspace...</p>
+    </div>
+  );
+};
+
+// ============================================================
+// AUTH SCREEN — Real Google OAuth UX
+// ============================================================
+const AuthScreen = ({ onLogin }) => {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [loading, setLoading] = useState(false);
+  const [showGoogleFallback, setShowGoogleFallback] = useState(false);
+
+  const handleSubmit = () => {
+    if (!form.email || !form.password) return;
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      const name = form.name || form.email.split("@")[0];
+      onLogin({ name, email: form.email, avatar: name.slice(0, 2).toUpperCase(), streak: 0, xp: 0 });
+    }, 1200);
+  };
+
+  const handleGoogleSuccess = useCallback((userData) => {
+    setShowGoogleFallback(false);
+    onLogin({ ...userData, streak: 0, xp: 0 });
+  }, [onLogin]);
+
+  // Set up fallback so GIS can call it when One Tap is blocked
+  useEffect(() => {
+    window.__gsiPopupFallback = () => setShowGoogleFallback(true);
+    return () => { delete window.__gsiPopupFallback; };
+  }, []);
+
+  const { signIn: googleSignIn } = useGoogleAuth(handleGoogleSuccess);
+
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, background: "var(--bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, overflow: "hidden" }}>
+        <div style={{ position: "absolute", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(108,92,231,0.12) 0%, transparent 70%)", top: -100, right: -100 }}/>
+        <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,229,255,0.08) 0%, transparent 70%)", bottom: -80, left: -80 }}/>
+
+        <div style={{ width: "100%", maxWidth: 380, animation: "slide-up 0.5s cubic-bezier(0.4,0,0.2,1)" }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: "linear-gradient(135deg, var(--purple), #5a4bd1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 16px", boxShadow: "0 0 40px var(--purple-glow)" }}>🎓</div>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 800, marginBottom: 8 }} className="glow-text">
+              {mode === "login" ? "Welcome back" : "Get started"}
+            </h1>
+            <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+              {mode === "login" ? "Sign in to continue your journey" : "Create your account today"}
+            </p>
+          </div>
+
+          {/* Real Google Button — triggers GIS account chooser */}
+          <button className="btn btn-ghost" onClick={googleSignIn} style={{ width: "100%", marginBottom: 20, height: 52, fontSize: 15 }}>
+            <svg width="20" height="20" viewBox="0 0 48 48">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            </svg>
+            Continue with Google
+          </button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }}/><span style={{ color: "var(--text-faint)", fontSize: 12 }}>or</span><div style={{ flex: 1, height: 1, background: "var(--border)" }}/>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {mode === "signup" && (
+              <div className="glow-input-wrapper">
+                <input className="input-field" placeholder="Full name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/>
+              </div>
+            )}
+            <div className="glow-input-wrapper">
+              <input className="input-field" type="email" placeholder="Email address" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/>
+            </div>
+            <div className="glow-input-wrapper">
+              <input className="input-field" type="password" placeholder="Password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
+            </div>
+            {mode === "login" && <p style={{ textAlign: "right", fontSize: 13, color: "var(--purple-light)", cursor: "pointer" }}>Forgot password?</p>}
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={loading} style={{ width: "100%", height: 52, fontSize: 15, marginTop: 4 }}>
+              {loading ? <div style={{ width: 20, height: 20, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white", borderRadius: "50%", animation: "spin-slow 0.8s linear infinite" }}/> : (mode === "login" ? "Sign In" : "Create Account")}
+            </button>
+          </div>
+
+          <p style={{ textAlign: "center", marginTop: 24, fontSize: 14, color: "var(--text-muted)" }}>
+            {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+            <span style={{ color: "var(--purple-light)", cursor: "pointer", fontWeight: 600 }} onClick={() => setMode(m => m === "login" ? "signup" : "login")}>
+              {mode === "login" ? "Sign up" : "Sign in"}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {showGoogleFallback && (
+        <GoogleSignInFallbackModal
+          onClose={() => setShowGoogleFallback(false)}
+          onSuccess={handleGoogleSuccess}
+        />
+      )}
+    </>
+  );
+};
+
+// ============================================================
+// SIDEBAR
+// ============================================================
+const Sidebar = ({ page, setPage, user, streak, streakUpdating, onClose }) => {
+  const items = [
+    { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+    { id: "assignments", label: "Assignments", icon: "assignment" },
+    { id: "attendance", label: "Attendance", icon: "attendance" },
+    { id: "planner", label: "Study Planner", icon: "planner" },
+    { id: "profile", label: "Profile", icon: "profile" },
+  ];
+  return (
+    <>
+      <div className="sidebar-overlay" onClick={onClose}/>
+      <nav className="sidebar">
+        <div style={{ padding: "32px 20px 20px", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 16, background: "linear-gradient(135deg, var(--purple), #5a4bd1)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16, boxShadow: "0 0 20px var(--purple-glow)" }}>
+              {user?.avatar || "U"}
+            </div>
+            <div>
+              <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{user?.name || "User"}</p>
+              <p style={{ color: "var(--text-muted)", fontSize: 12 }}>{user?.email || ""}</p>
+            </div>
+            <div className="dot-online" style={{ marginLeft: "auto" }}/>
+          </div>
+          {(streak > 0) && (
+            <div className={`streak-badge${streakUpdating ? " updating" : ""}`} style={{ marginTop: 16, display: "inline-flex" }}>
+              🔥 {streak} {streak === 1 ? "day" : "days"} streak
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1, padding: "16px 12px", display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
+          {items.map((item, i) => (
+            <div key={item.id} className={`nav-item ${page === item.id ? "active" : ""}`} style={{ animationDelay: `${i * 0.05}s` }}
+              onClick={() => { setPage(item.id); onClose(); }}>
+              <span className="nav-icon"><Icon name={item.icon} size={20} color={page === item.id ? "var(--purple-light)" : "var(--text-muted)"}/></span>
+              {item.label}
+              {page === item.id && <div style={{ marginLeft: "auto", width: 6, height: 6, borderRadius: "50%", background: "var(--purple)", boxShadow: "0 0 8px var(--purple)" }}/>}
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 8px var(--green-glow)" }}/>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>AI Assistant Online</span>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 8 }}>StudyAI v3.0 • 2026</p>
+        </div>
+      </nav>
+    </>
+  );
+};
+
+// ============================================================
+// HEADER
+// ============================================================
+const Header = ({ title, onMenu, showAI, onAI }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--border)", background: "rgba(7,7,15,0.8)", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 10 }}>
+    <button onClick={onMenu} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text)", padding: 4, borderRadius: 8, transition: "var(--transition)", display: "flex" }}
+      onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"}
+      onMouseLeave={e => e.currentTarget.style.background = "none"}>
+      <Icon name="menu" size={24}/>
+    </button>
+    <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 20, flex: 1 }}>{title}</h2>
+    {showAI && (
+      <button onClick={onAI} style={{ background: "linear-gradient(135deg, rgba(108,92,231,0.2), rgba(0,229,255,0.1))", border: "1px solid rgba(108,92,231,0.3)", borderRadius: 12, padding: "8px 14px", cursor: "pointer", color: "var(--cyan)", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, transition: "var(--transition)" }}>
+        <span style={{ fontSize: 16 }}>🤖</span> AI Help
+      </button>
+    )}
+  </div>
+);
+
+// ============================================================
+// DASHBOARD PAGE
+// ============================================================
+const DashboardPage = ({ user, stats, assignments, studyTasks, streak, streakUpdating, onMenu, onAI, onAddAssignment, onAddStudyTask }) => {
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const pendingAssignments = assignments.filter(a => a.status !== "completed").slice(0, 3);
+  const pendingTasks = studyTasks.filter(t => !t.completed);
+
+  const statCards = [
+    { label: "Attendance", value: stats.attendance ? `${stats.attendance}%` : "—", icon: "📊", color: "var(--purple)", glow: "var(--purple-glow)" },
+    { label: "Pending", value: stats.pending || 0, icon: "📝", color: "var(--yellow)", glow: "rgba(255,217,61,0.3)" },
+    { label: "Tasks Done", value: studyTasks.filter(t => t.completed).length, icon: "✅", color: "var(--cyan)", glow: "var(--cyan-glow)" },
+    { label: "Subjects", value: stats.attendance > 0 ? (stats.attendance >= 75 ? "Good" : "Low") : "—", icon: "⭐", color: "var(--green)", glow: "var(--green-glow)" },
+  ];
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Header title="Dashboard" onMenu={onMenu} showAI onAI={onAI}/>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+        {/* Greeting + Streak */}
+        <div style={{ marginBottom: 24, animation: "slide-up 0.4s both" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 4 }}>{today}</p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 800 }}>
+              Hey, <span className="glow-text">{user?.name?.split(" ")[0] || "there"}</span> 👋
+            </h1>
+            {streak > 0 && (
+              <div
+                className={`streak-badge${streakUpdating ? " updating" : ""}`}
+                style={{ fontSize: 14 }}
+              >
+                🔥 Streak: {streak} {streak === 1 ? "day" : "days"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
+          {statCards.map((s, i) => (
+            <div key={s.label} className="stat-card" style={{ "--card-glow": `radial-gradient(circle at 0% 0%, ${s.glow} 0%, transparent 60%)`, animationDelay: `${i * 0.08}s` }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
+                <span style={{ fontSize: 28 }}>{s.icon}</span>
+              </div>
+              <p style={{ fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 800, color: s.color, textShadow: `0 0 20px ${s.glow}`, marginBottom: 4 }}>{s.value}</p>
+              <p style={{ color: "var(--text-muted)", fontSize: 12 }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Today's Assignments */}
+        <div style={{ marginBottom: 28, animation: "slide-up 0.5s 0.2s both" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 17 }}>Today's Priority</h3>
+          </div>
+          {assignments.length === 0 ? (
+            <div className="empty-state" style={{ background: "var(--surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
+              <span className="empty-icon">📭</span>
+              <p style={{ fontWeight: 700, fontSize: 16 }}>No assignments yet</p>
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Start by adding your first assignment</p>
+              <button className="btn btn-primary" onClick={onAddAssignment} style={{ marginTop: 4 }}>+ Add Assignment</button>
+            </div>
+          ) : pendingAssignments.length === 0 ? (
+            <div className="empty-state" style={{ background: "var(--surface)", borderRadius: "var(--radius)", border: "1px solid rgba(0,224,150,0.2)" }}>
+              <span className="empty-icon">✅</span>
+              <p style={{ fontWeight: 600 }}>All caught up!</p>
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>No pending assignments</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {pendingAssignments.map((a, i) => (
+                <div key={a.id} className="assignment-item" style={{ animationDelay: `${i * 0.1}s` }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 12, background: a.priority === "high" ? "rgba(255,107,157,0.15)" : a.priority === "medium" ? "rgba(255,217,61,0.1)" : "rgba(0,229,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                    {a.priority === "high" ? "🔴" : a.priority === "medium" ? "🟡" : "🟢"}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</p>
+                    <p style={{ color: "var(--text-muted)", fontSize: 12 }}>{a.subject} • Due {a.deadline ? new Date(a.deadline).toLocaleDateString() : "—"}</p>
+                  </div>
+                  <span className={`chip chip-${a.status === "overdue" ? "pink" : "purple"}`}>{a.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Today's Study Tasks */}
+        <div style={{ marginBottom: 80, animation: "slide-up 0.5s 0.3s both" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 17 }}>Study Tasks</h3>
+          </div>
+          {studyTasks.length === 0 ? (
+            <div className="empty-state" style={{ background: "var(--surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
+              <span className="empty-icon">📚</span>
+              <p style={{ fontWeight: 700, fontSize: 16 }}>No study tasks yet</p>
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Add your first study task to get started</p>
+              <button className="btn btn-cyan" onClick={onAddStudyTask} style={{ marginTop: 4 }}>+ Add Study Task</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {studyTasks.slice(0, 4).map((t, i) => (
+                <div key={t.id} className="assignment-item" style={{ animationDelay: `${i * 0.08}s`, opacity: t.completed ? 0.6 : 1 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 12, background: "rgba(0,229,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>📖</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: 14, textDecoration: t.completed ? "line-through" : "none", color: t.completed ? "var(--text-muted)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.topic}</p>
+                    <p style={{ color: "var(--text-muted)", fontSize: 12 }}>{t.duration} • <span className={`chip chip-${t.priority === "high" ? "pink" : t.priority === "medium" ? "yellow" : "cyan"}`} style={{ fontSize: 10, padding: "2px 8px" }}>{t.priority}</span></p>
+                  </div>
+                  {t.completed && <Icon name="check" size={18} color="var(--green)"/>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// ADD ASSIGNMENT MODAL
+// ============================================================
+const AddAssignmentModal = ({ onClose, onAdd, editData }) => {
+  const [form, setForm] = useState(editData || { title: "", subject: "", priority: "medium", deadline: "", status: "pending" });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleAdd = () => {
+    if (!form.title || !form.deadline) return;
+    onAdd(form);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-sheet">
+        <div className="modal-header">
+          <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>{editData ? "Edit Assignment" : "New Assignment"}</h3>
+          <button onClick={onClose} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
+            <Icon name="close" size={18}/>
+          </button>
+        </div>
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, overflowY: "auto", maxHeight: "70vh" }}>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Title *</label>
+            <div className="glow-input-wrapper"><input className="input-field" placeholder="Assignment title" value={form.title} onChange={e => set("title", e.target.value)}/></div>
+          </div>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Subject</label>
+            <div className="glow-input-wrapper"><input className="input-field" placeholder="e.g. CS301" value={form.subject} onChange={e => set("subject", e.target.value)}/></div>
+          </div>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Priority</label>
+            <div className="tab-bar">
+              {["low", "medium", "high"].map(p => (
+                <button key={p} className={`tab-btn ${form.priority === p ? "active" : ""}`} onClick={() => set("priority", p)} style={{ textTransform: "capitalize" }}>{p}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Status</label>
+            <div className="tab-bar">
+              {["pending", "completed", "overdue"].map(s => (
+                <button key={s} className={`tab-btn ${form.status === s ? "active" : ""}`} onClick={() => set("status", s)} style={{ textTransform: "capitalize" }}>{s}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Deadline *</label>
+            <div className="glow-input-wrapper"><input className="input-field" type="date" value={form.deadline} onChange={e => set("deadline", e.target.value)}/></div>
+          </div>
+          <button className="btn btn-primary" onClick={handleAdd} style={{ width: "100%", height: 52, marginTop: 8, fontSize: 15 }}>
+            ✨ {editData ? "Save Changes" : "Add Assignment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// ADD STUDY TASK MODAL
+// ============================================================
+const AddStudyTaskModal = ({ onClose, onAdd, editData }) => {
+  const [form, setForm] = useState(editData || { topic: "", duration: "1h", priority: "medium" });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const durations = ["30m", "1h", "1.5h", "2h", "3h"];
+
+  const handleAdd = () => {
+    if (!form.topic) return;
+    onAdd(form);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-sheet">
+        <div className="modal-header">
+          <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>{editData ? "Edit Study Task" : "Add Study Task"}</h3>
+          <button onClick={onClose} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
+            <Icon name="close" size={18}/>
+          </button>
+        </div>
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Study Topic *</label>
+            <div className="glow-input-wrapper">
+              <input className="input-field" placeholder="e.g. Data Structures – Binary Trees" value={form.topic} onChange={e => set("topic", e.target.value)}/>
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Duration</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {durations.map(d => (
+                <button key={d} onClick={() => set("duration", d)}
+                  style={{ padding: "8px 16px", borderRadius: 99, border: "1px solid", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: 13, fontWeight: 600, transition: "var(--transition)",
+                    background: form.duration === d ? "rgba(108,92,231,0.2)" : "var(--surface)",
+                    borderColor: form.duration === d ? "var(--purple)" : "var(--border)",
+                    color: form.duration === d ? "var(--purple-light)" : "var(--text-muted)",
+                    boxShadow: form.duration === d ? "0 0 16px var(--purple-glow)" : "none" }}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", color: "var(--text-muted)", fontSize: 12, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Priority</label>
+            <div className="tab-bar">
+              {["low", "medium", "high"].map(p => (
+                <button key={p} className={`tab-btn ${form.priority === p ? "active" : ""}`} onClick={() => set("priority", p)} style={{ textTransform: "capitalize" }}>{p}</button>
+              ))}
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={handleAdd} style={{ width: "100%", height: 52, marginTop: 8, fontSize: 15 }}>
+            📚 {editData ? "Save Changes" : "Add Study Task"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// ASSIGNMENTS PAGE
+// ============================================================
+const AssignmentsPage = ({ assignments, onMenu, onAI, onAdd, onDelete, onToggle, onUpdate }) => {
+  const [filter, setFilter] = useState("all");
+  const [editModal, setEditModal] = useState(null);
+
+  const filtered = assignments.filter(a => filter === "all" || a.status === filter);
+
+  const handleEdit = (updated) => {
+    onUpdate(editModal.id, updated);
+    setEditModal(null);
+  };
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Header title="Assignments" onMenu={onMenu} showAI onAI={onAI}/>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 4 }}>
+          {["all", "pending", "completed", "overdue"].map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              style={{ padding: "8px 16px", borderRadius: 99, border: "1px solid", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: 13, fontWeight: 500, transition: "var(--transition)", whiteSpace: "nowrap",
+                background: filter === f ? "var(--purple)" : "var(--surface)",
+                borderColor: filter === f ? "var(--purple)" : "var(--border)",
+                color: filter === f ? "white" : "var(--text-muted)",
+                boxShadow: filter === f ? "0 4px 16px var(--purple-glow)" : "none" }}>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {f !== "all" && <span style={{ marginLeft: 6, opacity: 0.7 }}>({assignments.filter(a => a.status === f).length})</span>}
+            </button>
+          ))}
+        </div>
+
+        {assignments.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon">📝</span>
+            <p style={{ fontWeight: 700, fontSize: 18 }}>No assignments yet</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Start by adding your first assignment</p>
+            <button className="btn btn-primary" onClick={onAdd}>+ Add Assignment</button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon">🔍</span>
+            <p style={{ fontWeight: 600 }}>No {filter} assignments</p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: 80 }}>
+            {filtered.map((a, i) => (
+              <div key={a.id} className="assignment-item" style={{ animationDelay: `${i * 0.06}s` }}>
+                <button onClick={() => onToggle(a.id)}
+                  style={{ width: 28, height: 28, borderRadius: 8, border: `2px solid ${a.status === "completed" ? "var(--green)" : "var(--border)"}`, background: a.status === "completed" ? "rgba(0,224,150,0.15)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "var(--transition)" }}>
+                  {a.status === "completed" && <Icon name="check" size={16} color="var(--green)"/>}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 3, textDecoration: a.status === "completed" ? "line-through" : "none", color: a.status === "completed" ? "var(--text-muted)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {a.subject && <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{a.subject}</span>}
+                    <span style={{ fontSize: 11, color: a.status === "overdue" ? "var(--pink)" : "var(--text-faint)" }}>📅 {a.deadline ? new Date(a.deadline).toLocaleDateString() : "—"}</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className={`chip ${a.priority === "high" ? "chip-pink" : a.priority === "medium" ? "chip-yellow" : "chip-cyan"}`}>{a.priority}</span>
+                  <button onClick={() => setEditModal(a)} style={{ background: "rgba(108,92,231,0.1)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: 8, width: 30, height: 30, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "var(--transition)" }}>
+                    <Icon name="edit" size={13} color="var(--purple-light)"/>
+                  </button>
+                  <button onClick={() => onDelete(a.id)} style={{ background: "rgba(255,107,157,0.1)", border: "1px solid rgba(255,107,157,0.2)", borderRadius: 8, width: 30, height: 30, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "var(--transition)" }}>
+                    <Icon name="delete" size={13} color="var(--pink)"/>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <button className="fab" onClick={onAdd}>+</button>
+      {editModal && <AddAssignmentModal onClose={() => setEditModal(null)} onAdd={handleEdit} editData={editModal}/>}
+    </div>
+  );
+};
+
+// ============================================================
+// ATTENDANCE PAGE
+// ============================================================
+const AttendancePage = ({ attendance, onMenu, onAI, onUpdate, onDelete, onAdd }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ subject: "", attended: "", total: "", color: "#6C5CE7" });
+  const colors = ["#6C5CE7", "#00E5FF", "#00E096", "#FF6B9D", "#FFD93D", "#FF7675"];
+
+  const handleAdd = () => {
+    if (!form.subject || !form.attended || !form.total) return;
+    onAdd({ subject: form.subject, attended: Number(form.attended), total: Number(form.total), color: form.color });
+    setShowModal(false);
+    setForm({ subject: "", attended: "", total: "", color: "#6C5CE7" });
+  };
+
+  const avgAtt = attendance.length
+    ? Math.round(attendance.reduce((a, s) => a + (s.attended / s.total * 100), 0) / attendance.length)
+    : 0;
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Header title="Attendance" onMenu={onMenu} showAI onAI={onAI}/>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+
+        {attendance.length > 0 && (
+          <div style={{ background: "linear-gradient(135deg, rgba(108,92,231,0.15), rgba(0,229,255,0.08))", border: "1px solid rgba(108,92,231,0.25)", borderRadius: "var(--radius)", padding: 24, marginBottom: 24, position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", right: -20, top: -20, width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(circle, rgba(108,92,231,0.3), transparent)" }}/>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 8 }}>Overall Attendance</p>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 16 }}>
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 52, fontWeight: 800, lineHeight: 1, background: "linear-gradient(135deg, var(--purple-light), var(--cyan))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                {avgAtt}%
+              </span>
+              <div style={{ paddingBottom: 8 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: avgAtt >= 75 ? "var(--green)" : "var(--pink)" }}>
+                  {avgAtt >= 75 ? "✅ Good Standing" : "⚠️ Needs Attention"}
+                </p>
+                <p style={{ fontSize: 12, color: "var(--text-faint)" }}>Min. required: 75%</p>
+              </div>
+            </div>
+            <div className="progress-bar-track">
+              <div className="progress-bar-fill" style={{ width: `${avgAtt}%`, background: "linear-gradient(90deg, var(--purple), var(--cyan))" }}/>
+            </div>
+          </div>
+        )}
+
+        {attendance.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon">📅</span>
+            <p style={{ fontWeight: 700, fontSize: 18 }}>No subjects tracked</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Add your subjects to start tracking attendance</p>
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Subject</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 80 }}>
+              {attendance.map((s, i) => {
+                const pct = Math.round(s.attended / s.total * 100);
+                const low = pct < 75;
+                return (
+                  <div key={s.id} className="card" style={{ animationDelay: `${i * 0.08}s`, borderColor: low ? "rgba(255,107,157,0.3)" : "var(--border)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 12, height: 12, borderRadius: "50%", background: s.color, boxShadow: `0 0 12px ${s.color}66`, flexShrink: 0 }}/>
+                        <span style={{ fontWeight: 600, fontSize: 15 }}>{s.subject}</span>
+                        {low && <span className="chip chip-pink">Low</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 20, color: s.color }}>{pct}%</span>
+                        <button onClick={() => onDelete(s.id)} style={{ background: "rgba(255,107,157,0.1)", border: "1px solid rgba(255,107,157,0.2)", borderRadius: 8, width: 28, height: 28, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Icon name="delete" size={13} color="var(--pink)"/>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="progress-bar-track" style={{ marginBottom: 12 }}>
+                      <div className="progress-bar-fill" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${s.color}cc, ${s.color})`, boxShadow: `0 0 12px ${s.color}66` }}/>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 11, color: "var(--text-faint)", display: "block", marginBottom: 4 }}>Attended</label>
+                        <input className="input-field" type="number" value={s.attended} min={0} max={s.total}
+                          onChange={e => onUpdate(s.id, "attended", e.target.value)}
+                          style={{ padding: "8px 12px", fontSize: 13, textAlign: "center" }}/>
+                      </div>
+                      <span style={{ color: "var(--text-faint)", marginTop: 20, fontSize: 18 }}>/</span>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 11, color: "var(--text-faint)", display: "block", marginBottom: 4 }}>Total</label>
+                        <input className="input-field" type="number" value={s.total} min={1}
+                          onChange={e => onUpdate(s.id, "total", e.target.value)}
+                          style={{ padding: "8px 12px", fontSize: 13, textAlign: "center" }}/>
+                      </div>
+                    </div>
+                    {low && <p style={{ fontSize: 12, color: "var(--pink)", marginTop: 10 }}>⚠️ Need {Math.ceil((0.75 * s.total - s.attended) / 0.25)} more classes to reach 75%</p>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ height: 16 }}/>
+            <button className="btn btn-primary" onClick={() => setShowModal(true)} style={{ width: "100%", height: 52, marginBottom: 80 }}>
+              + Add Subject
+            </button>
+          </>
+        )}
+      </div>
+
+      {showModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+          <div className="modal-sheet">
+            <div className="modal-header">
+              <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>Add Subject</h3>
+              <button onClick={() => setShowModal(false)} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, width: 36, height: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}><Icon name="close" size={18}/></button>
+            </div>
+            <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div className="glow-input-wrapper"><input className="input-field" placeholder="Subject name" value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))}/></div>
+              <div style={{ display: "flex", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: "var(--text-faint)", display: "block", marginBottom: 6 }}>Classes Attended</label>
+                  <input className="input-field" type="number" placeholder="e.g. 20" value={form.attended} onChange={e => setForm(p => ({ ...p, attended: e.target.value }))}/>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: "var(--text-faint)", display: "block", marginBottom: 6 }}>Total Classes</label>
+                  <input className="input-field" type="number" placeholder="e.g. 28" value={form.total} onChange={e => setForm(p => ({ ...p, total: e.target.value }))}/>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, display: "block" }}>Color</label>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {colors.map(c => <div key={c} onClick={() => setForm(p => ({ ...p, color: c }))} style={{ width: 32, height: 32, borderRadius: 10, background: c, cursor: "pointer", boxShadow: form.color === c ? `0 0 16px ${c}` : "none", border: form.color === c ? "2px solid white" : "2px solid transparent", transition: "var(--transition)" }}/>)}
+                </div>
+              </div>
+              <button className="btn btn-primary" onClick={handleAdd} style={{ width: "100%", height: 52 }}>Add Subject</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// STUDY PLANNER PAGE — proper task system
+// ============================================================
+const StudyPlannerPage = ({ studyTasks, onMenu, onAI, onAdd, onDelete, onToggle, onUpdate }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [editModal, setEditModal] = useState(null);
+  const completedCount = studyTasks.filter(t => t.completed).length;
+  const total = studyTasks.length;
+
+  const handleEdit = (updated) => {
+    onUpdate(editModal.id, updated);
+    setEditModal(null);
+  };
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Header title="Study Planner" onMenu={onMenu} showAI onAI={onAI}/>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+
+        {total > 0 && (
+          <div style={{ background: "linear-gradient(135deg, rgba(0,229,255,0.08), rgba(108,92,231,0.12))", border: "1px solid rgba(0,229,255,0.2)", borderRadius: "var(--radius)", padding: 20, marginBottom: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div>
+                <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 4 }}>Tasks Completed</p>
+                <p style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 800 }}>
+                  <span style={{ color: "var(--cyan)" }}>{completedCount}</span>
+                  <span style={{ color: "var(--text-faint)", fontSize: 20 }}>/{total}</span>
+                </p>
+              </div>
+              <div style={{ width: 56, height: 56, borderRadius: "50%", background: `conic-gradient(var(--cyan) ${total ? (completedCount/total*360) : 0}deg, rgba(255,255,255,0.05) 0deg)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#0a0a18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "var(--cyan)" }}>
+                  {total ? Math.round(completedCount/total*100) : 0}%
+                </div>
+              </div>
+            </div>
+            <div className="progress-bar-track">
+              <div className="progress-bar-fill" style={{ width: total ? `${completedCount/total*100}%` : "0%", background: "linear-gradient(90deg, #0089cc, var(--cyan))" }}/>
+            </div>
+          </div>
+        )}
+
+        {studyTasks.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon">📚</span>
+            <p style={{ fontWeight: 700, fontSize: 18 }}>No study tasks yet</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Start by adding your first study task</p>
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Add Study Task</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 80 }}>
+            {studyTasks.map((t, i) => (
+              <div key={t.id} className="card" style={{ animationDelay: `${i * 0.06}s`, opacity: t.completed ? 0.65 : 1, borderColor: t.completed ? "rgba(0,224,150,0.25)" : "var(--border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <button onClick={() => onToggle(t.id)}
+                    style={{ width: 32, height: 32, borderRadius: 10, border: `2px solid ${t.completed ? "var(--green)" : "var(--border)"}`, background: t.completed ? "rgba(0,224,150,0.15)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "var(--transition)" }}>
+                    {t.completed && <Icon name="check" size={18} color="var(--green)"/>}
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: 15, textDecoration: t.completed ? "line-through" : "none", color: t.completed ? "var(--text-muted)" : "var(--text)", marginBottom: 4 }}>{t.topic}</p>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 12, color: "var(--text-faint)" }}>⏱ {t.duration}</span>
+                      <span className={`chip chip-${t.priority === "high" ? "pink" : t.priority === "medium" ? "yellow" : "cyan"}`} style={{ fontSize: 10 }}>{t.priority}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => setEditModal(t)} style={{ background: "rgba(108,92,231,0.1)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: 8, width: 30, height: 30, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Icon name="edit" size={13} color="var(--purple-light)"/>
+                    </button>
+                    <button onClick={() => onDelete(t.id)} style={{ background: "rgba(255,107,157,0.1)", border: "1px solid rgba(255,107,157,0.2)", borderRadius: 8, width: 30, height: 30, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Icon name="delete" size={13} color="var(--pink)"/>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button className="fab" onClick={() => setShowModal(true)}>+</button>
+
+      {showModal && <AddStudyTaskModal onClose={() => setShowModal(false)} onAdd={onAdd}/>}
+      {editModal && <AddStudyTaskModal onClose={() => setEditModal(null)} onAdd={handleEdit} editData={editModal}/>}
+    </div>
+  );
+};
+
+// ============================================================
+// PROFILE PAGE
+// ============================================================
+const ProfilePage = ({ user, assignments, attendance, studyTasks, onMenu }) => {
+  const completed = assignments.filter(a => a.status === "completed").length;
+  const avgAtt = attendance.length
+    ? Math.round(attendance.reduce((a, s) => a + (s.attended / s.total * 100), 0) / attendance.length)
+    : 0;
+  const tasksCompleted = studyTasks.filter(t => t.completed).length;
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Header title="Profile" onMenu={onMenu}/>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+        <div style={{ textAlign: "center", marginBottom: 32, animation: "slide-up 0.4s both" }}>
+          <div style={{ position: "relative", display: "inline-block", marginBottom: 16 }}>
+            <div style={{ width: 96, height: 96, borderRadius: 32, background: "linear-gradient(135deg, var(--purple), #5a4bd1)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 36, boxShadow: "0 0 40px var(--purple-glow), 0 0 80px rgba(108,92,231,0.2)" }}>
+              {user?.avatar || "U"}
+            </div>
+            <div style={{ position: "absolute", bottom: -4, right: -4, width: 28, height: 28, borderRadius: 10, background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, border: "2px solid var(--bg)", boxShadow: "0 0 12px var(--green-glow)" }}>✓</div>
+          </div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 800, marginBottom: 4 }}>{user?.name || "Student"}</h2>
+          <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 12 }}>{user?.email || ""}</p>
+          {user?.googleLinked && <span className="chip chip-cyan" style={{ marginRight: 8 }}>Google Connected</span>}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
+          {[
+            { label: "Done", value: completed, icon: "✅" },
+            { label: "Study Tasks", value: tasksCompleted, icon: "📚" },
+            { label: "Avg Att.", value: avgAtt ? `${avgAtt}%` : "—", icon: "📊" },
+          ].map(s => (
+            <div key={s.label} className="card" style={{ textAlign: "center", padding: 16 }}>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{s.icon}</div>
+              <p style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, marginBottom: 4 }} className="glow-text">{s.value}</p>
+              <p style={{ color: "var(--text-faint)", fontSize: 11 }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, marginBottom: 16 }}>Achievements</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              { icon: "📝", label: "First Assignment", desc: "Add your first task", earned: assignments.length > 0 },
+              { icon: "✅", label: "Task Crusher", desc: "Complete an assignment", earned: completed > 0 },
+              { icon: "📅", label: "Attendance Star", desc: "75%+ attendance", earned: avgAtt >= 75 },
+              { icon: "📚", label: "Study Starter", desc: "Complete a study task", earned: tasksCompleted > 0 },
+            ].map(a => (
+              <div key={a.label} style={{ padding: 14, borderRadius: "var(--radius-sm)", background: a.earned ? "rgba(108,92,231,0.1)" : "var(--surface)", border: `1px solid ${a.earned ? "rgba(108,92,231,0.3)" : "var(--border)"}`, opacity: a.earned ? 1 : 0.45, transition: "var(--transition)" }}>
+                <span style={{ fontSize: 24, display: "block", marginBottom: 8 }}>{a.icon}</span>
+                <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{a.label}</p>
+                <p style={{ color: "var(--text-faint)", fontSize: 11 }}>{a.desc}</p>
+                {a.earned && <span style={{ fontSize: 10, color: "var(--green)", fontWeight: 700 }}>✓ Earned</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// AI CHAT ASSISTANT
+// ============================================================
+const AIChat = ({ onClose }) => {
+  const [messages, setMessages] = useState([
+    { role: "assistant", text: "Hi! I'm your AI study assistant 🤖\n\nI can help you with:\n• Explaining topics\n• Creating study plans\n• Assignment tips\n• Exam strategies\n\nWhat would you like help with today?" }
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const quickPrompts = ["Create a study plan for finals", "Explain recursion simply", "Tips for time management", "How to study effectively?"];
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const sendMessage = useCallback(async (text) => {
+    const msg = text || input.trim();
+    if (!msg || loading) return;
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", text: msg }]);
+    setLoading(true);
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: "You are StudyAI, an intelligent student productivity assistant. Help students with study plans, academic concepts, time management, and strategies. Be concise, encouraging, and practical. Use emojis occasionally. Keep responses under 200 words unless detail is needed.",
+          messages: [...messages.map(m => ({ role: m.role, content: m.text })), { role: "user", content: msg }]
+        })
+      });
+      const data = await resp.json();
+      const reply = data.content?.map(c => c.text).join("") || "I'm having trouble connecting. Please try again!";
+      setMessages(prev => [...prev, { role: "assistant", text: reply }]);
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", text: "Connection error. Please check your network and try again. 🔌" }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [input, messages, loading]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: "1px solid var(--border)", background: "rgba(7,7,15,0.9)", backdropFilter: "blur(20px)" }}>
+        <button onClick={onClose} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, width: 40, height: 40, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text)" }}>
+          <Icon name="close" size={20}/>
+        </button>
+        <div style={{ width: 44, height: 44, borderRadius: 16, background: "linear-gradient(135deg, var(--purple), var(--cyan))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, boxShadow: "0 0 24px var(--purple-glow)" }}>🤖</div>
+        <div>
+          <p style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 16 }}>StudyAI Assistant</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="dot-online"/>
+            <span style={{ fontSize: 12, color: "var(--green)" }}>Online • Powered by Claude</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: 16 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", gap: 10, alignItems: "flex-end" }}>
+            {m.role === "assistant" && <div style={{ width: 32, height: 32, borderRadius: 12, background: "linear-gradient(135deg, var(--purple), var(--cyan))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, boxShadow: "0 0 16px var(--purple-glow)" }}>🤖</div>}
+            <div className={`chat-bubble ${m.role === "user" ? "chat-bubble-user" : "chat-bubble-ai"}`} style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+          </div>
+        ))}
+        {loading && (
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div style={{ width: 32, height: 32, borderRadius: 12, background: "linear-gradient(135deg, var(--purple), var(--cyan))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🤖</div>
+            <div className="chat-bubble chat-bubble-ai" style={{ display: "flex", gap: 4, alignItems: "center", padding: "14px 18px" }}>
+              {[0, 1, 2].map(j => <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--purple-light)", animation: `typing-dot 1s ${j * 0.2}s ease-in-out infinite` }}/>)}
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef}/>
+      </div>
+
+      {messages.length <= 1 && (
+        <div style={{ padding: "0 20px 16px", display: "flex", gap: 8, overflowX: "auto" }}>
+          {quickPrompts.map(q => (
+            <button key={q} onClick={() => sendMessage(q)}
+              style={{ padding: "8px 14px", borderRadius: 99, border: "1px solid rgba(108,92,231,0.3)", background: "rgba(108,92,231,0.1)", color: "var(--purple-light)", fontSize: 12, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "var(--font-body)", transition: "var(--transition)" }}>
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ padding: "12px 20px 24px", borderTop: "1px solid var(--border)", background: "rgba(7,7,15,0.9)", backdropFilter: "blur(20px)" }}>
+        <div style={{ display: "flex", gap: 12, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: 20, padding: "8px 8px 8px 16px", transition: "var(--transition)" }}>
+          <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            placeholder="Ask me anything about studying..."
+            style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontFamily: "var(--font-body)", fontSize: 14 }}/>
+          <button onClick={() => sendMessage()} disabled={!input.trim() || loading}
+            style={{ width: 44, height: 44, borderRadius: 14, background: input.trim() ? "linear-gradient(135deg, var(--purple), #5a4bd1)" : "var(--surface)", border: "none", cursor: input.trim() ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", transition: "var(--transition)", flexShrink: 0, boxShadow: input.trim() ? "0 4px 16px var(--purple-glow)" : "none", color: "white" }}>
+            <Icon name="send" size={18} color={input.trim() ? "white" : "var(--text-faint)"}/>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// FLOATING ACTION BUTTON WITH MINI MENU
+// ============================================================
+const FloatingActions = ({ onAddAssignment, onAddStudyTask }) => {
+  const [open, setOpen] = useState(false);
+
+  const actions = [
+    { label: "Add Assignment", icon: "📝", onClick: () => { setOpen(false); onAddAssignment(); } },
+    { label: "Add Study Task", icon: "📚", onClick: () => { setOpen(false); onAddStudyTask(); } },
+  ];
+
+  return (
+    <>
+      {open && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 48 }} onClick={() => setOpen(false)}/>
+      )}
+      {open && (
+        <div className="fab-menu">
+          {actions.map((a, i) => (
+            <div key={a.label} className="fab-menu-item"
+              onClick={a.onClick}
+              style={{ animation: `fab-menu-item 0.2s ${i * 0.05}s ease both` }}>
+              <span style={{ fontSize: 18 }}>{a.icon}</span>
+              {a.label}
+            </div>
+          ))}
+        </div>
+      )}
+      <button className={`fab ${open ? "open" : ""}`} onClick={() => setOpen(o => !o)}>
+        +
+      </button>
+    </>
+  );
+};
+
+// ============================================================
+// MAIN APP
+// ============================================================
+export default function App() {
+  const [screen, setScreen] = useState("splash");
+  const [page, setPage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [addAssignmentModal, setAddAssignmentModal] = useState(false);
+  const [addStudyTaskModal, setAddStudyTaskModal] = useState(false);
+  const [celebration, setCelebration] = useState(false);
+  // Track the "all done" state to prevent repeated triggers
+  const prevAllDone = useRef(false);
+  // Track if celebration already fired for current "all done" session
+  const celebrationFired = useRef(false);
+  const store = useStore();
+
+  const handleLogin = (userData) => {
+    store.login(userData);
+    setScreen("app");
+  };
+
+  // Watch ALL tasks (assignments + study tasks) for completion → celebration + streak
+  useEffect(() => {
+    if (screen !== "app") return;
+
+    const allAssignments = store.assignments;
+    const allStudyTasks = store.studyTasks;
+    const totalItems = allAssignments.length + allStudyTasks.length;
+
+    // Need at least one item of each type to celebrate
+    if (totalItems === 0) {
+      prevAllDone.current = false;
+      celebrationFired.current = false;
+      return;
+    }
+
+    const assignmentsDone = allAssignments.length === 0 || allAssignments.every(a => a.status === "completed");
+    const studyDone = allStudyTasks.length === 0 || allStudyTasks.every(t => t.completed);
+    const allDone = assignmentsDone && studyDone && totalItems > 0;
+
+    if (allDone && !prevAllDone.current && !celebrationFired.current) {
+      // First time crossing from incomplete → complete
+      celebrationFired.current = true;
+      setCelebration(true);
+      store.incrementStreak();
+    }
+
+    if (!allDone) {
+      // User unchecked a task → reset trigger so next completion fires again
+      celebrationFired.current = false;
+    }
+
+    prevAllDone.current = allDone;
+  }, [store.assignments, store.studyTasks, screen]);
+
+  const handleAddAssignment = () => setAddAssignmentModal(true);
+  const handleAddStudyTask = () => setAddStudyTaskModal(true);
+
+  const pageComponent = () => {
+    switch (page) {
+      case "dashboard":
+        return <DashboardPage
+          user={store.user} stats={store.stats}
+          assignments={store.assignments} studyTasks={store.studyTasks}
+          streak={store.streak} streakUpdating={store.streakUpdating}
+          onMenu={() => setSidebarOpen(true)} onAI={() => setAiOpen(true)}
+          onAddAssignment={handleAddAssignment} onAddStudyTask={handleAddStudyTask}/>;
+      case "assignments":
+        return <AssignmentsPage
+          assignments={store.assignments}
+          onMenu={() => setSidebarOpen(true)} onAI={() => setAiOpen(true)}
+          onAdd={handleAddAssignment}
+          onDelete={store.deleteAssignment} onToggle={store.toggleAssignment}
+          onUpdate={store.updateAssignment}/>;
+      case "attendance":
+        return <AttendancePage
+          attendance={store.attendance}
+          onMenu={() => setSidebarOpen(true)} onAI={() => setAiOpen(true)}
+          onAdd={store.addAttendance} onUpdate={store.updateAttendance} onDelete={store.deleteAttendance}/>;
+      case "planner":
+        return <StudyPlannerPage
+          studyTasks={store.studyTasks}
+          onMenu={() => setSidebarOpen(true)} onAI={() => setAiOpen(true)}
+          onAdd={store.addStudyTask} onDelete={store.deleteStudyTask}
+          onToggle={store.toggleStudyTask} onUpdate={store.updateStudyTask}/>;
+      case "profile":
+        return <ProfilePage
+          user={store.user} assignments={store.assignments}
+          attendance={store.attendance} studyTasks={store.studyTasks}
+          onMenu={() => setSidebarOpen(true)}/>;
+      default: return null;
+    }
+  };
+
+  return (
+    <>
+      <GlobalStyles/>
+      <div style={{ height: "100%", background: "var(--bg)", position: "relative", maxWidth: 480, margin: "0 auto", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <div style={{ position: "absolute", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(108,92,231,0.06) 0%, transparent 70%)", top: "30%", left: "50%", transform: "translateX(-50%)", pointerEvents: "none", zIndex: 0 }}/>
+
+        {screen === "splash" && <SplashScreen onDone={() => setScreen("auth")}/>}
+        {screen === "auth" && <AuthScreen onLogin={handleLogin}/>}
+
+        {screen === "app" && (
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative", zIndex: 1 }}>
+            <div key={page} className="page-enter" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              {pageComponent()}
+            </div>
+
+            {sidebarOpen && (
+              <Sidebar page={page} setPage={setPage} user={store.user}
+                streak={store.streak} streakUpdating={store.streakUpdating}
+                onClose={() => setSidebarOpen(false)}/>
+            )}
+
+            {addAssignmentModal && <AddAssignmentModal onClose={() => setAddAssignmentModal(false)} onAdd={store.addAssignment}/>}
+            {addStudyTaskModal && <AddStudyTaskModal onClose={() => setAddStudyTaskModal(false)} onAdd={store.addStudyTask}/>}
+
+            {aiOpen ? (
+              <AIChat onClose={() => setAiOpen(false)}/>
+            ) : (
+              <>
+                {/* FAB with mini menu — visible on non-dedicated pages */}
+                {page !== "assignments" && page !== "planner" && (
+                  <FloatingActions onAddAssignment={handleAddAssignment} onAddStudyTask={handleAddStudyTask}/>
+                )}
+                {/* Floating AI button on inner pages */}
+                {(page === "attendance" || page === "profile") && (
+                  <button onClick={() => setAiOpen(true)} style={{ position: "fixed", bottom: 100, right: 24, width: 48, height: 48, borderRadius: "50%", background: "linear-gradient(135deg, #1a0050, var(--purple))", border: "1px solid rgba(108,92,231,0.4)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: "0 4px 24px var(--purple-glow)", zIndex: 49 }}>
+                    🤖
+                  </button>
+                )}
+              </>
+            )}
+
+            {celebration && (
+              <CelebrationOverlay
+                streak={store.streak}
+                onClose={() => setCelebration(false)}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
